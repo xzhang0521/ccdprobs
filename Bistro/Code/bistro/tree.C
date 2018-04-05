@@ -229,6 +229,7 @@ void Tree::readSubtree(istringstream& s,Node* parent,vector<Node*>& leafNodes,ve
   e->setNodes(n,parent);
   n->addEdge(e);
   parent->addEdge(e);
+  n->setPathParent(parent);
 
   char c = s.peek();
 
@@ -291,7 +292,7 @@ void Tree::readSubtree(istringstream& s,Node* parent,vector<Node*>& leafNodes,ve
 
 void Tree::treeInit(string line)
 {
-    // Create the tree from parenthetic representation in line.
+  // Create the tree from parenthetic representation in line.
   // Create new nodes and edges on the fly.
   // Leaf node and internal node pointers placed in separate vectors.  Combine to vector nodes at end.
 
@@ -683,7 +684,7 @@ double Tree::calculate(const Alignment& alignment,QMatrix& qmatrix)
   logLikelihood.resize(alignment.getNumSites());
   // calculate transition probabilities for all edges
   for ( vector<Edge*>::iterator e=edges.begin(); e!=edges.end(); ++e )
-    (*e)->calculate(qmatrix);
+    (*e)->calculate(qmatrix);               //set transition rate matrix from qmatrix
 
   // loop over sites and calculate log-likelihood while traversing the tree
   for ( int k=0; k < alignment.getNumSites(); ++k )
@@ -1000,6 +1001,7 @@ void Tree::mleError(bool& converge)
 //   return prop;
 // }
 
+// [IMPORTANT] Clear ProbMap of the tree before calling calcualte on an edge
 void Edge::calculate(double t,Alignment& alignment,QMatrix& qmatrix,double& logl,double& dlogl,double& ddlogl)
 {
   // if(false)
@@ -1079,7 +1081,7 @@ void Edge::printLikMinLength(ostream& f,Alignment& alignment,QMatrix& qmatrix)
 //  f << "likelihood around MIN_EDGE_LENGTH" << endl;
 //  f << "t, logl, dlogl, ddlogl" << endl;
 //  double dx = 0.00005;
-  double dx = 2.0*length[0] / 100.0;
+  double dx = 2.0*length[current] / 100.0;
   for ( int i=0; i<=100; ++i )
   {
     double curr = i*dx;
@@ -1098,6 +1100,8 @@ void Edge::printLikMinLength(ostream& f,Alignment& alignment,QMatrix& qmatrix)
 
 
 // necsito anhadir los pasos de NR en individual branches y despues comparar con lo q sale cuando se evalua el likelihood jointly
+// I need to add the steps of NR in individual branches and then compare what comes out when evaluating the likelihood jointly
+
 double Edge::mleLength(Alignment& alignment,QMatrix& qmatrix,bool& converge)
 {
   int iter=0;
@@ -1121,6 +1125,7 @@ double Edge::mleLength(Alignment& alignment,QMatrix& qmatrix,bool& converge)
     double prop1_dlogl = curr_dlogl;
     double prop1_ddlogl = curr_ddlogl;
     calculate(prop1,alignment,qmatrix,prop1_logl,prop1_dlogl,prop1_ddlogl);
+    
     double prop2 = 2*curr;
     double prop2_logl = curr_logl;
     double prop2_dlogl = curr_dlogl;
@@ -1154,7 +1159,8 @@ double Edge::mleLength(Alignment& alignment,QMatrix& qmatrix,bool& converge)
     curr = prop1;
     curr_logl = prop1_logl;
     curr_dlogl = prop1_dlogl;
-    curr_ddlogl = prop1_ddlogl;
+    curr_ddlogl = prop1_ddlogl;	  
+   
   }
   else if ( curr_dlogl > TOL )
   {
@@ -1373,8 +1379,10 @@ void Tree::mleLengths(Alignment& alignment,QMatrix& qmatrix)
 {
   clearProbMaps(); //we need this here, otherwise it does not work
   // compute transition matrices for all edges using provisional edge lengths
+  
   for ( vector<Edge*>::iterator e=edges.begin(); e!=edges.end(); ++e )
     (*e)->calculate(qmatrix);
+  
   root->subtreeMLELengths(alignment,qmatrix,NULL);
   root->setMapParentRecursivelySmart(NULL);
 }
@@ -3472,3 +3480,250 @@ void Tree::mcmcNNI(mt19937_64& rng,Alignment& alignment,int& score,map<string,in
   cmap[oldTop]++;
 //  cerr << setw(6) << setprecision(4) << fixed << acceptProb << " " << oldTop << " " << oldScore << " " << top << " " << newScore << endl;
 }
+
+
+// ------------------------------- Add Function: findCladeEdge ----------------------------------------------------------------------
+
+// ** function: findCladeEdge find the edge that seperates the clade from the rest of the tree
+// ** Return NULL if there is no such edge
+// ** Use for the later likelihood integration
+
+Edge* Node::findCladeEdge(Clade clade, Edge* parentEdge, Clade* subTreeClade){
+  Clade temp = Clade((*subTreeClade).size());
+  Clade* tempClade = &temp;
+  (*subTreeClade).reset();
+  
+  
+  for ( vector<Edge*>::iterator e=edges.begin(); e !=edges.end(); ++e )
+  {
+    if ( (*e) == parentEdge )
+      continue; 
+    Node* n = this->getNeighbor((*e));
+    if(n -> getLeaf())
+      (*subTreeClade).add(n->getNumber());   
+    else{
+      Edge* CladeEdge = n->findCladeEdge(clade, (*e), tempClade);
+      if(CladeEdge == NULL)
+	subTreeClade->add((*tempClade));
+      else
+	return CladeEdge;
+    }
+  }
+  if((*subTreeClade) == clade)
+    return parentEdge;
+  else
+    return NULL;
+}
+
+
+// ** function: findCladeEdge(), find the clade parent edge in the Tree
+
+Edge* Tree::findCladeEdge(Clade clade){
+  Clade temptree = Clade(numTaxa);
+  Clade* subTreeClade = &temptree;
+  
+  Edge* e0 = root -> findCladeEdge(clade, root->getEdge(0), subTreeClade);
+  Edge* e1 = root -> findCladeEdge(clade, root->getEdge(1), subTreeClade);
+  Edge* e2 = root -> findCladeEdge(clade, root->getEdge(2), subTreeClade);
+ 
+  if(e0 != NULL)
+    return e0;
+  else if (e1 != NULL)
+    return e1;
+  else
+    return e2; 
+}
+
+
+//** function: findCladeNode(), find the clade parent node in the Tree 
+
+Node* Tree::findCladeNode(Clade clade){
+  if(clade.count() == numTaxa)
+    return root;
+  Edge* cladeEdge = findCladeEdge(clade);
+  return cladeEdge -> getOtherNode(cladeEdge -> getParentNode());
+}
+
+vector<Edge*> Tree::findCladeSplitEdges(Clade clade){
+  vector<Edge*> edges;
+  Edge* cladeEdge = findCladeEdge(clade);
+  Node* cladeNode = findCladeNode(clade);
+  //cerr << "parentNode is: " << cladeNode -> getNumber() << endl;
+  if(clade.count() == (numTaxa - 1)){
+    for(int i = 0; i<3; i++)
+      if(root -> getEdge(i) -> getOtherNode(root) -> getNumber() != 1)
+	 edges.push_back(root -> getEdge(i));
+  }else if(clade.count() == numTaxa){
+    for(int i = 0; i<3; i++)
+	edges.push_back(root -> getEdge(i));
+  }else if(cladeEdge != NULL){
+    for(int i = 0; i<3; i++)
+      if(cladeNode -> getEdge(i) != cladeEdge)
+	 edges.push_back(cladeNode -> getEdge(i));
+  }
+  return edges;
+}
+
+
+/*
+find map parent does not work 
+Node* Edge::findParent(){
+  if(getNode(0) -> getMapParent() == this)
+    return getNode(1);
+  else if(getNode(1) -> getMapParent() == this)
+    return getNode(0);
+  else
+    return NULL;
+}
+*/
+
+Node* Edge::getParentNode(){
+  Node* n0 = getNode(0);
+  Node* n1 = getNode(1);
+  Node* n0Parent = n0 -> getParentNode();
+  Node* n1Parent = n1 ->getParentNode();
+  if(n0 == n1Parent)
+    return n0;
+  else
+    return n1;
+  /*
+  if(n0 -> getNumber() > n1 -> getNumber()){
+    return n0;
+  }
+  else{
+    return n1;
+  }
+  */
+}
+
+//
+vector<Node*> Edge::getPathToRoot(Node* root){
+  Node* n0 = getNode(0);
+  Node* n1 = getNode(1);
+  n0 -> setPath(root);
+  n1 -> setPath(root);
+  if(n0->getPath().size() > n1 ->getPath().size())
+    return n1->getPath();
+  else
+    return n0->getPath();
+  
+  /*
+  vector<Node*> v;
+  Edge* e = this;
+  Node* parent = e->findParent();
+  while(parent != NULL){
+    //cerr << "parent node 1: " << parent->getNumber() << endl;
+    v.push_back(parent);
+    if(parent == root)
+      break;
+    e = parent->getMapParent();
+    if(e == NULL)
+      break;
+    cerr << "e is: " << e->getNumber() << endl;
+    parent = e->findParent();
+    cerr << "parent node 2 " << parent->getNumber() << endl;
+  }
+  return v;
+  */
+}
+
+void Node::setPath(Node* root){  
+  Node* parent = this;
+  path.push_back(parent);
+  while(parent != root){
+    parent = parent -> getParentNode();
+    path.push_back(parent);
+  }
+  return;
+}
+
+double Edge::getddlogl(Alignment& alignment,QMatrix& qmatrix){
+   double logl,dlogl,ddlogl;
+   calculate(length[current],alignment,qmatrix,logl,dlogl,ddlogl);
+   return ddlogl;
+}
+
+// ----------------------------------------------------------------------------
+// All branch length should be fixed at MLE values when calling this function;
+// Only do this if the split is not trivial
+// @return log integral
+// ----------------------------------------------------------------------------
+
+double Tree::CalLogIntegral(Clade clade, Alignment& alignment, QMatrix& q_init){
+  vector<Edge*> bothEdges = findCladeSplitEdges(clade);
+  // erase trivial splits
+  
+  if((bothEdges[0] -> getOtherNode(bothEdges[0] -> getParentNode())) -> getLeaf())
+    bothEdges.erase(bothEdges.begin());
+  else if ((bothEdges[1] -> getOtherNode(bothEdges[1] -> getParentNode())) -> getLeaf())
+    bothEdges.erase(bothEdges.begin() + 1);
+  
+  vector<double> logProb;
+  double interval = 0.01;
+  double trackArea = 0;
+  double p;
+  double logl,dlogl,ddlogl;
+  clearProbMaps();
+  
+  /*
+  bothEdges[1] -> calculate(bothEdges[1]->getLength(),alignment,q_init,logl,dlogl,ddlogl);
+  cerr << fixed << setprecision(6) << setw(12) << bothEdges[1]->getLength() << " "
+       << fixed << setprecision(6) << setw(12) << dlogl << " "
+       << fixed << setprecision(6) << setw(12) << ddlogl << endl;
+  cerr << endl;
+  cerr << endl;
+  */
+  
+  p = 4.5;                    // for correction
+  for(vector<Edge*>::iterator it = bothEdges.begin(); it!= bothEdges.end(); it ++){
+    clearProbMaps();
+    Edge* e = *it;
+    double backmle = e->getLength();
+    double logm = calculate(alignment, q_init) + e->getLength();
+    double logh = logm;
+    vector<Node*> pathNodes = e -> getPathToRoot(root);
+    
+    while(e -> getLength() >= 0 && logh > (logm - p)){
+      // 4.5 may change because of a different curvature
+      // baseline: logm - constant (decided by curvature)
+      
+      trackArea = trackArea + exp(logh - logm);
+      e -> setLength(e->getLength() - interval);
+      for(vector<Node*>::iterator nodeit = pathNodes.begin(); nodeit!=pathNodes.end(); nodeit++)
+	(*nodeit) -> clearProbMap();
+      logh = calculate(alignment, q_init) + e->getLength();
+    }
+    e -> setLength(backmle + interval);
+    for(vector<Node*>::iterator nodeit = pathNodes.begin(); nodeit!=pathNodes.end(); nodeit++)
+      (*nodeit) -> clearProbMap();
+    logh = calculate(alignment, q_init) + e -> getLength();
+   
+    while(logh > (logm - p)){
+      trackArea = trackArea + exp(logh - logm);
+      e -> setLength(e->getLength() + interval);
+      for(vector<Node*>::iterator nodeit = pathNodes.begin(); nodeit!=pathNodes.end(); nodeit++)
+	(*nodeit) -> clearProbMap();
+      logh = calculate(alignment, q_init) + e->getLength();
+    }
+    logProb.push_back(logm + log(interval) + log(trackArea));
+    if(bothEdges.size() == 1)
+      break;
+    e -> setLength(backmle);
+
+    for(vector<Node*>::iterator nodeit = pathNodes.begin(); nodeit!=pathNodes.end(); nodeit++)
+	(*nodeit) -> clearProbMap();
+  }
+  
+  if(logProb.size() == 1)
+    return logProb[0];
+  else if(logProb[0] > logProb[1])
+    return log(0.5) + log(1 + exp(logProb[1] - logProb[0])) + logProb[0];
+  else
+    return log(0.5) + log(1 + exp(logProb[0] - logProb[1])) + logProb[1];
+}
+
+
+// add a paramter rou, p*t to the left and p^-1*t to the right
+// k^2/2 => 4.5 cut-off of the 3 sd
+// use ddlogl to decide rou, call calculate() on the edge 
+// Edge::mleLength, dlogl, ddlogl 

@@ -37,7 +37,7 @@ class Node;
 class Edge
 {
 private:
-  int number;
+  int number;  // Edge Number 
   int current; // 0 or 1 for index into which length is current for MCMC purposes
   double length[2];
   Node* nodes[2];
@@ -100,6 +100,10 @@ public:
   void restoreLength() { length[current] = length[1-current]; }
   void logLikelihoodProfile(ostream&,Alignment&,QMatrix&);
   void swapNode(Node*, Node*);
+  //Node* findParent();
+  Node* getParentNode();
+  vector<Node*> getPathToRoot(Node*);
+  double getddlogl(Alignment& alignment,QMatrix& qmatrix);
 };
 
 class Node
@@ -108,16 +112,19 @@ private:
   int number;
   int current; // 0 or 1
   string name;
-  vector<Edge*> edges;
+  vector<Edge*> edges;        // A node can have 1, 2 or 3 edges 
   bool leaf;
   // things for likelihood calculation
   string pattern;
   int level;
   vector<Node*> activeChildren;
-  Node* nodeParent;
-  Edge* edgeParent;
+  Node* nodeParent;  // pointer to the node parent 
+  Edge* edgeParent;  // pointer to the edge parent
   Edge* mapParent[2]; // pointer to parent edge used when creating patternToProbMap, Clau: I think we need this separate from parent
   int minNumber; // smallest number in subtree rooted at node
+  vector<Node*> path;  //path to the root, used for clearProbMap() in likelihood profile
+  Node* pathParent;
+  
 public:
   map<string,pair<double,Vector4d> > patternToProbMap[2];
   Node()
@@ -175,6 +182,7 @@ public:
     return e;
   }
   void print(ostream&);
+  //string getTaxaIndex(ostream&);
   void makeTopology(stringstream&,Edge*,bool);
   void makeTreeNumbers(stringstream&,Edge*);
   string getPattern() const { return pattern; }
@@ -189,7 +197,7 @@ public:
   void clearProbMapsSmart(Edge*);
   void clearProbMap()
   {
-    // cerr << "clearing prob maps and mapParent for node " << number << endl << flush;
+    //cerr << "clearing prob maps and mapParent for node " << number << endl << flush;
     patternToProbMap[current].clear();
     mapParent[current] = NULL;
   }
@@ -241,6 +249,12 @@ public:
   void logLikelihoodProfile(ostream&,Alignment&,QMatrix&,Edge*);
   Edge* pickOtherEdge(Edge*,mt19937_64&);
   void swapEdge(Edge*,Edge*);
+  Edge* findCladeEdge(Clade clade, Edge* parentEdge, Clade* subTreeClade);
+  vector<Edge*> getEdges() {return edges;}
+  void setPath(Node* root);
+  vector<Node*> getPath() {return path;}
+  void setPathParent(Node* n) {pathParent = n; }
+  Node* getParentNode() {return pathParent;}            // return the topological parent node 
 };
 
 class Tree
@@ -340,6 +354,12 @@ public:
   void printProfile(ostream&,Alignment&,QMatrix&);
   void getInternalEdges(vector<Edge*>&);
   void mcmcNNI(mt19937_64&,Alignment&,int&,map<string,int>&,map<string,int>&,vector<Edge*>&,int&);
+
+  //------------------------------------------------------------ Add function: findCladeEdge -----------------------------------------------------------------------
+  Edge* findCladeEdge(Clade clade);
+  Node* findCladeNode(Clade clade);
+  vector<Edge*> findCladeSplitEdges(Clade clade);
+  double CalLogIntegral(Clade, Alignment&, QMatrix&);
 };
 
 class MCMCStats

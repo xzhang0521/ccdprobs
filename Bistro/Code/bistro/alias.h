@@ -39,7 +39,7 @@ public:
   }
   void initiate(vector<double>&, vector<T>&);
   T pick(mt19937_64&);
-  void printTwoPointDistributions();
+  void printTwoPointDistributions(ostream&);
 };
 
 template <typename T>
@@ -133,6 +133,8 @@ void Alias<T>::computeTwoPointDistributions()
     }
 }
 
+
+/*
 template <typename T>
 void Alias<T>::printTwoPointDistributions()
 {
@@ -152,6 +154,29 @@ void Alias<T>::printTwoPointDistributions()
     cerr << cells[i].alias << "\t";
   }
   cerr << endl;
+}
+*/
+
+template <typename T>
+void Alias<T>::printTwoPointDistributions(ostream& f)
+{
+  f << "Two point distribution\n";
+  f << "(Add) cell size is: " << cells.size() << endl;
+  f << "Cutoff:\t";
+  for (int i = 0; i < cells.size(); i++) {
+    f << cells[i].cutoff << "\t";
+  }
+  f << endl;
+  f << "Index:\t";
+  for (int i = 0; i < cells.size(); i++) {
+    f << cells[i].index << "\t";
+  }
+  f << endl;
+  f << "Alias:\t";
+  for (int i = 0; i < cells.size(); i++) {
+    f << cells[i].alias << "\t";
+  }
+  f << endl;
 }
 
 #endif /* ALIAS_H_ */

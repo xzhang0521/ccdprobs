@@ -1,0 +1,24 @@
+-*- mode: compilation; default-directory: "~/Github/clade/ccdprobs/Bistro/Code/bistro/" -*-
+Compilation started at Wed Mar  7 20:22:48
+
+make -k 
+g++ -O3 -I. -std=c++11 -Wno-deprecated -Wignored-attributes -Wdeprecated-declarations -o bistro main-threads.C parameter.o sequence.o ccdprobs.o tree.o model.o random.o cladegraph.o -lpthread
+main-threads.C:670:44: warning: implicit conversion from 'long' to 'result_type' (aka 'int')
+      changes value from 4294967295 to -1 [-Wconstant-conversion]
+    uniform_int_distribution<> rint_orig(0,4294967295);
+                               ~~~~~~~~~   ^~~~~~~~~~
+main-threads.C:674:39: warning: implicit conversion from 'long' to 'result_type' (aka 'int')
+      changes value from 4294967295 to -1 [-Wconstant-conversion]
+    uniform_int_distribution<> rint(0,4294967295);
+                               ~~~~   ^~~~~~~~~~
+main-threads.C:1444:44: warning: implicit conversion from 'long' to 'result_type' (aka 'int')
+      changes value from 4294967295 to -1 [-Wconstant-conversion]
+    uniform_int_distribution<> rint_orig(0,4294967295);
+                               ~~~~~~~~~   ^~~~~~~~~~
+main-threads.C:1448:39: warning: implicit conversion from 'long' to 'result_type' (aka 'int')
+      changes value from 4294967295 to -1 [-Wconstant-conversion]
+    uniform_int_distribution<> rint(0,4294967295);
+                               ~~~~   ^~~~~~~~~~
+4 warnings generated.
+
+Compilation finished at Wed Mar  7 20:22:59

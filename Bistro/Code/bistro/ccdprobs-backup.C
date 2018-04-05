@@ -34,7 +34,7 @@ bool operator< (const CladePair& c1,const CladePair& c2)
   return ( c1.getClade1() < c2.getClade1() ? true : (c1.getClade1() == c2.getClade1() ? (c1.getClade2() < c2.getClade2()) : false ) );
 }
 
-void Clade::print(ostream& f) const{
+void Clade::print(ostream& f) const {
 
   string comma = "";
 
@@ -56,34 +56,6 @@ void Clade::print(ostream& f) const{
   }
   f << '}';
 }
-
-//------------------------------ Add the function ------------------------------------------------
-// get the taxa index from the clade 
-vector<unsigned long> Clade::getTaxaIndex() const{
- vector<unsigned long> taxa;
-
-  dynamic_bitset<unsigned char>::size_type first = clade.find_first();
-  dynamic_bitset<unsigned char>::size_type last = first;
-  dynamic_bitset<unsigned char>::size_type i = first;
-
-  while ( i != dynamic_bitset<unsigned char>::npos ) {
-    i = clade.find_next(i);
-    if ( i > last+1 ) { // print the previous range and set first to i
-      //f << first+1;
-      taxa.push_back(first+1);
-	if ( last > first ){
-	  for(unsigned long j = first+2; j<=last + 1; j++){
-	    //f << j;
-	     taxa.push_back(j);
-	  }
-	}
-      first = i;
-    }
-    last = i;
-  }
-  return taxa;
-}
-// ---------------------------------------------------------------------------------------------------
 
 // void Clade::printMB(ostream& f) const {
 //   f << clade ;
@@ -170,7 +142,7 @@ void makeBinary(string& x)
   if ( subtrees.size() == 2 )
     return;
   if ( subtrees.size() == 3 ) {
-    x = "(" + subtrees[0] + ",(" + subtrees[1] + "," + subtrees[2] + "));";   // make the top binary 
+    x = "(" + subtrees[0] + ",(" + subtrees[1] + "," + subtrees[2] + "));";
     return;
   }
   else {
