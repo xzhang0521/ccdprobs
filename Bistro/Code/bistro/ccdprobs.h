@@ -345,11 +345,6 @@ CCDProbs<T>::CCDProbs(map<string,T>& topologyToCountMap,vector<int>& tNumbers,ve
     Clade parent=(p->first).getClade1();
     Clade child=(p->first).getClade2();
     mm.insert( pair<Clade,pair<Clade,T> >(parent,make_pair(child, p->second)) );
-  }
-  
-  for ( typename map<CladePair,T>::iterator p=pairCount.begin(); p!=pairCount.end(); ++p ) {
-    Clade parent=(p->first).getClade1();
-    Clade child=(p->first).getClade2();
     cladeToSubclade.insert(pair<Clade,Clade>(parent, child));
   }
   

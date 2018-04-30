@@ -1242,9 +1242,7 @@ int main(int argc, char* argv[])
   string tempTopSetFile = parameters.getOutFileRoot() +"-top.set";
   string tempCladeSubcladeFile = parameters.getOutFileRoot() + "-Clade.Subclade";
   string tempCladePairSetFile = parameters.getOutFileRoot() + "-Cladepair.Set";
-
-  // smap: Clade Count
-  // tmap: Pair Count
+    
   ofstream smap(originalSmapFile.c_str());
   ccd.writeCladeCount(smap);
   smap.close();

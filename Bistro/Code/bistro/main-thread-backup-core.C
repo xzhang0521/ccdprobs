@@ -104,6 +104,71 @@ VectorXd dirichletProposalDensityScale(VectorXd x,double scale,double& logPropos
   return y;
 }
 
+
+template <typename T>
+void setCCDmm(CCDProbs<T>& ccd,mt19937_64& rng, Alignment& alignment, MatrixXd& gtrDistanceMatrix, QMatrix& q_init, Parameter& parameters){
+  //Get two multiset
+  set<string> topSet = ccd.getTopSet();
+  multimap<Clade, Clade> cladeToSubclade = ccd.getCladeToSubclade(); 
+  multimap<CladePair, string> cladePairToSetIndex = ccd.getCladePairToSetIndex();
+  string tempProfileFile = parameters.getOutFileRoot() + "-logliklihood.profile";
+  ofstream tempProfile(tempProfileFile.c_str());
+    multimap<Clade, pair<Clade, T>> newmm;
+  //map<string, double> topologyToLogProb;
+  int n = 0;
+  T logprob = 0;
+  map<string, T> treeToLogProb; 
+  for(multimap<Clade, Clade>::iterator it = cladeToSubclade.begin(); it != cladeToSubclade.end(); ++ it)
+    {
+      // For Each clade splitting, pick a tree randomly
+      if((*it).first.count() == 2)
+	T logprob = 0;
+      else {
+	pair<multimap<CladePair, string>::iterator, multimap<CladePair, string>::iterator> it2 = cladePairToSetIndex.equal_range(CladePair((*it).first,(*it).second));
+	size_t size = distance(it2.first, it2.second);
+	size_t idx; 
+	if(size == 0)
+	  idx = 0;
+	else
+	  idx = rng() % size;
+	multimap<CladePair, string>::iterator it3 = it2.first;
+	advance(it3, idx);
+	(*it3).first.print(tempProfile);
+	tempProfile << " -> " << (*it3).second << endl;   // (*it3).first is a clade pair, (*it3).second is the topology
+	
+	if ( treeToLogProb.find((*it3).second) == treeToLogProb.end() ) {
+	  Tree temptree((*it3).second,alignment);           // create the tree
+	  temptree.unroot();
+	  tempProfile << "print the tree before mle" << endl;
+	  temptree.print(tempProfile);
+	  
+	  tempProfile << "print the tree after mle" << endl;
+	  temptree.setNJDistances(gtrDistanceMatrix,rng);
+	  temptree.reroot(1);
+	  temptree.calculate(alignment, q_init);
+	  for(int i = 0; i < parameters.getNumMLE(); i++)
+	    temptree.mleLengths(alignment, q_init); // get mlelengths
+	
+	  double mle = temptree.calculate(alignment, q_init);
+	  tempProfile << "************ MLE is: " << mle << endl;
+	  temptree.print(tempProfile);
+	
+	  temptree.clearProbMaps();
+	  logprob = temptree.CalLogIntegral((*it).first, alignment, q_init);
+	  treeToLogProb.insert(pair<string, T>((*it3).second, logprob));
+	} else{
+	  logprob = treeToLogProb[(*it3).second];
+	}
+      
+      }
+      newmm.insert(pair<Clade, pair<Clade, T>>((*it).first, make_pair((*it).second, logprob)) );
+      
+      tempProfile << "----------------------------------------------------------------------------" << endl;
+    }
+  
+  ccd.setmm(newmm);
+}
+
 // arguments made reference to avoid copying in each thread
 template<typename T>
 void randomTrees(int coreID, int indStart, int indEnd, vector<double>& logwt, double& maxLogWeight, CCDProbs<T> ccd, mt19937_64& rng, Alignment& alignment, MatrixXd& gtrDistanceMatrix, QMatrix& q_init, Parameter& parameters, multimap<string,double>& topologyToLogweightMMap, vector<vector<double>>& pi, vector<vector<double>>& rates, vector<string>& trees)
@@ -1242,9 +1307,7 @@ int main(int argc, char* argv[])
   string tempTopSetFile = parameters.getOutFileRoot() +"-top.set";
   string tempCladeSubcladeFile = parameters.getOutFileRoot() + "-Clade.Subclade";
   string tempCladePairSetFile = parameters.getOutFileRoot() + "-Cladepair.Set";
-
-  // smap: Clade Count
-  // tmap: Pair Count
+    
   ofstream smap(originalSmapFile.c_str());
   ccd.writeCladeCount(smap);
   smap.close();
@@ -1263,172 +1326,6 @@ int main(int argc, char* argv[])
   ofstream ccmap(tempCladeSubcladeFile.c_str());
   ccdDist.printCladeSubcladeMap(ccmap);
   ccmap.close();
-
-  // Print clade pair to the topology string map 
-  ofstream csmap(tempCladePairSetFile.c_str());
-  ccdDist.printCladePairSetMap(csmap);
-  //csmap.close();
-  csmap << "\n\n\n" << endl;
-  csmap << "-----------------------------------------------------------------------" << endl;    
-  csmap << "Seed = " << parameters.getSeed()<< endl;
-  csmap << "From the clade splitting pair, random pick a topology" << endl;
-
-  //create random rng2 using seed from parameters.getSeeed
-  mt19937_64 rng2(parameters.getSeed());
-
-  //Get two multiset
-  set<string> topSet = ccdDist.getTopSet();
-  multimap<Clade, Clade> cladeToSubclade = ccdDist.getCladeToSubclade(); 
-  multimap<CladePair, string> cladePairToSetIndex = ccdDist.getCladePairToSetIndex();
-  string tempProfileFile = parameters.getOutFileRoot() + "-logliklihood.profile";
-  ofstream tempProfile(tempProfileFile.c_str());
-
-  
-  /*For debugging added function
-  
-  Tree tree1("(((2,5),(4,6)),3,1);",alignment);
-   tree1.reroot(1);
-  
-  Clade clade = Clade(tree1.getNumTaxa());
-  clade.add(2);
-  clade.add(4);
-  clade.add(5);
-  clade.add(6);
-  
-  double logl,dlogl,ddlogl, newmle;
-  bool conv;
-  
-  MatrixXd gtrDistanceMatrixCopy2(alignment.getNumTaxa(),alignment.getNumTaxa());
-  gtrDistanceMatrixCopy2 = gtrDistanceMatrix;
-  tree1.setNJDistances(gtrDistanceMatrixCopy2,rng);
-  if( parameters.getRootFix() )
-    tree1.randomizeBL(rng);
-  else
-    tree1.randomize(rng);
-  tree1.calculate(alignment, q_init);
-  for(int i = 0; i < parameters.getNumMLE(); i++)
-    tree1.mleLengths(alignment, q_init); // get mlelengths
-  double mle1 = tree1.calculate(alignment, q_init);
-  debugp << "MLE of tree1 is: " << mle1 << endl;
- 
-  tree1.print(debugp);
-  debugp << endl;
-  
-  vector<Edge*> alledges = tree1.getEdges();
-  for(vector<Edge*>::iterator edge_it = alledges.begin(); edge_it != alledges.end(); ++edge_it){
-    tree1.clearProbMaps();
-    (*edge_it) -> calculate((*edge_it)->getLength(),alignment,q_init,logl,dlogl,ddlogl);
-    cerr <<"Edge number: " << fixed << setprecision(6) << setw(12) << (*edge_it)->getNumber() << endl;
-    cerr << fixed << setprecision(6) << setw(12) << (*edge_it)->getLength() << " "
-	 << fixed << setprecision(6) << setw(12) << dlogl << " "
-	 << fixed << setprecision(6) << setw(12) << ddlogl << endl;
-    cerr << endl;
-  }
-
-  cerr << "Exit the loop and retry the mlelengths in tree" << endl;
-  tree1.calculate(alignment, q_init);
-  //mle1 = tree1.calculate(alignment, q_init);
-  debugp << "After force the branch length at mle, loglikelihood is: " << mle1 << endl;
-  for(int i = 0; i < parameters.getNumMLE(); i++)
-    tree1.mleLengths(alignment, q_init);
-
-  for(vector<Edge*>::iterator edge_it = alledges.begin(); edge_it != alledges.end(); edge_it++ ){
-    tree1.clearProbMaps();
-    (*edge_it) -> calculate((*edge_it)->getLength(),alignment,q_init,logl,dlogl,ddlogl);
-    cerr << fixed << setprecision(6) << setw(12) << (*edge_it)->getLength() << " "
-	 << fixed << setprecision(6) << setw(12) << dlogl << " "
-	 << fixed << setprecision(6) << setw(12) << ddlogl << endl;
-    cerr << endl;
-  }
-  
-
-  
-  debugp << endl;
-  bool converge;
-  debugp <<"get current length after tree mle: "<< endl;
-  tree1.getEdge(1) -> print(debugp);
-  debugp << "get likelihood: " << tree1.calculate(alignment, q_init) << endl;
-  debugp <<"Redo on Edge to get mle length: "  << tree1.getEdge(1) -> mleLength(alignment, q_init, converge) << endl;
-  tree1.getEdge(1) -> setLength(tree1.getEdge(1) ->mleLength(alignment, q_init, converge));
-  vector<Node*> pathNodes = tree1.getEdge(1) -> getPathToRoot(tree1.getRoot());
-  for(vector<Node*>::iterator nodeit = pathNodes.begin(); nodeit!=pathNodes.end(); nodeit++)
-	(*nodeit) -> clearProbMap();
-  debugp << "get new likelihood: " <<tree1.calculate(alignment, q_init)<< endl;
-  
-
-  
-  //tree1.CalLogIntegral(clade, alignment, q_init);
-   
-  //Testing the approxmiated calcualted function. 
- 
-  tempProfile << "tree1 approximate integrals: " <<
-    tree1.CalLogIntegral(clade, alignment, q_init) << endl;
-  tempProfile << "tree2 approximate integrals: " <<
-    tree2.CalLogIntegral(clade, alignment, q_init) << endl;
-  */
- 
-  // Restore after debugging
-  multimap<Clade, pair<Clade, double>> newmm;
-  //map<string, double> topologyToLogProb;
-  int n = 0;
-  double logprob = 0;
-  map<string, double> treeToLogProb; 
-  for(multimap<Clade, Clade>::iterator it = cladeToSubclade.begin(); it != cladeToSubclade.end(); ++ it)
-    {
-      // For Each clade splitting, pick a tree randomly
-      if((*it).first.count() == 2)
-	double logprob = 0;
-      else {
-	pair<multimap<CladePair, string>::iterator, multimap<CladePair, string>::iterator> it2 = cladePairToSetIndex.equal_range(CladePair((*it).first,(*it).second));
-	size_t size = distance(it2.first, it2.second);
-	size_t idx; 
-	if(size == 0)
-	  idx = 0;
-	else
-	  idx = rng2() % size;
-	multimap<CladePair, string>::iterator it3 = it2.first;
-	advance(it3, idx);
-	(*it3).first.print(csmap);
-	csmap << " -> " << (*it3).second << endl;
-	(*it3).first.print(tempProfile);
-	tempProfile << " -> " << (*it3).second << endl;   // (*it3).first is a clade pair, (*it3).second is the topology
-	
-	if ( treeToLogProb.find((*it3).second) == treeToLogProb.end() ) {
-	  Tree temptree((*it3).second,alignment);           // create the tree
-	  temptree.unroot();
-	  tempProfile << "print the tree before mle" << endl;
-	  temptree.print(tempProfile);
-	  
-	  tempProfile << "print the tree after mle" << endl;
-	  MatrixXd gtrDistanceMatrixCopy2(alignment.getNumTaxa(),alignment.getNumTaxa());
-	  gtrDistanceMatrixCopy2 = gtrDistanceMatrix;
-	  temptree.setNJDistances(gtrDistanceMatrixCopy2,rng);
-	  temptree.reroot(1);
-	  temptree.calculate(alignment, q_init);
-	  for(int i = 0; i < parameters.getNumMLE(); i++)
-	    temptree.mleLengths(alignment, q_init); // get mlelengths
-	
-	  double mle = temptree.calculate(alignment, q_init);
-	  tempProfile << "************ MLE is: " << mle << endl;
-	  temptree.print(tempProfile);
-	
-	  temptree.clearProbMaps();
-	  logprob = temptree.CalLogIntegral((*it).first, alignment, q_init);
-	  treeToLogProb.insert(pair<string, double>((*it3).second, logprob));
-	} else{
-	  logprob = treeToLogProb[(*it3).second];
-	}
-      
-      }
-      newmm.insert(pair<Clade, pair<Clade, double>>((*it).first, make_pair((*it).second, logprob)) );
-      
-      tempProfile << "----------------------------------------------------------------------------" << endl;
-    }
-  
-  ccdDist.setmm(newmm);
-  csmap.close();
-  tempProfile.close();
-  //------------------------------------------------------------------------------
   
   smap.open(parsimonySmapFile);
   ccdParsimony.writeCladeCount(smap);
@@ -1502,6 +1399,7 @@ int main(int argc, char* argv[])
       cout << setw(15) << *p << endl;
 
     vector<thread> threads;
+    vector<thread> threads2;
     vector< multimap<string,double> > topologymm(cores); //vector of multimaps
     vector< vector<double> > logwt0(cores);
     vector< vector<string> > trees0(cores);
@@ -1516,14 +1414,13 @@ int main(int argc, char* argv[])
       cerr << "core = " << i << endl;
       if ( !parameters.getReweight() )
 	{
-	  
+	  threads2.push_back(thread(setCCDmm<double>, ref(ccdParsimony), ref(*(vrng[i])), ref(alignment), ref(gtrDistanceMatrix), ref(model), ref(parameters)));
 	  threads.push_back(thread(randomTrees<double>,i,startTreeNumber[i], startTreeNumber[i+1], ref(logwt0[i]), ref(maxLogW[i]), ccdParsimony, ref(*(vrng[i])), ref(alignment), ref(gtrDistanceMatrix), ref(model), ref(parameters), ref(topologymm[i]), ref(pi0[i]),ref(rates0[i]),ref(trees0[i])));
 	}
       else
 	{
-	  //tmap.open(distProbFile);
+	  threads2.push_back(thread(setCCDmm<double>, ref(ccdDist), ref(*(vrng[i])), ref(alignment), ref(gtrDistanceMatrix), ref(model), ref(parameters)));
 	  threads.push_back(thread(randomTrees<double>,i,startTreeNumber[i], startTreeNumber[i+1], ref(logwt0[i]), ref(maxLogW[i]), ccdDist, ref(*(vrng[i])), ref(alignment), ref(gtrDistanceMatrix), ref(model), ref(parameters), ref(topologymm[i]), ref(pi0[i]), ref(rates0[i]),ref(trees0[i])));
-	  // tmap.close();
 	}
     }
 
