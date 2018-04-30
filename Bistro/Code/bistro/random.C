@@ -247,7 +247,7 @@ double halfNormalGamma(Edge* e, Alignment& alignment, QMatrix& qmatrix, double& 
 	cerr << "found half normal case, t: " << t << ", mu: " << mu << ", sigma: " << sigma << ", sampled: " << s << endl;
       if ( mu > 0 )
       {
-	cout << "t = " << t << ", mu = " << mu << ", sigma2 = " << sigma2 << endl;
+	//cout << "t = " << t << ", mu = " << mu << ", sigma2 = " << sigma2 << endl;
 	e->printLikMinLength(cout,alignment,qmatrix);
 //	exit(1);
       }

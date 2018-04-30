@@ -1092,7 +1092,7 @@ int main(int argc, char* argv[])
       }
       Tree* boottree = new Tree(*t, alignment);
       double d = mtree.distance(boottree);
-      cout << boottree->makeTopologyNumbers() << " " << d << endl;
+      //cout << boottree->makeTopologyNumbers() << " " << d << endl;
       boottree->reroot(1); //warning: if 1 changes, need to change makeBinary if called after
       //boottree->makeBinary();
       boottree->sortCanonical();
